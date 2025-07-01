@@ -24,6 +24,10 @@ from langchain_community.vectorstores import FAISS
 from langchain.chains import create_retrieval_chain
 from langchain.chains.combine_documents import create_stuff_documents_chain
 from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.tools import tool
+from langchain.agents import AgentExecutor, create_tool_calling_agent
+from langchain_core.prompts import MessagesPlaceholder
+from langchain.chains.history_aware_retriever import create_history_aware_retriever
 
 # --- 页面配置和标题 ---
 st.set_page_config(
@@ -48,6 +52,44 @@ safety_settings = {
     HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_NONE,
     HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_NONE,
 }
+
+# --- 金牌功能：定义数据分析工具 ---
+@tool
+def get_angle_extremes(joint: str) -> dict:
+    """
+    获取指定关节在运动过程中的最大和最小角度。
+    当用户询问关于某个关节的"活动范围"、"最大弯曲角度"或"最小角度"时使用此工具。
+    参数 `joint` 的可选值为 '膝' 或 '髋'。
+    """
+    if 'analysis_df' not in st.session_state or st.session_state.analysis_df.empty:
+        return {"error": "无可用分析数据。请先上传并分析一个视频。"}
+    df = st.session_state.analysis_df
+    try:
+        left_col, right_col = f'左{joint}角度', f'右{joint}角度'
+        min_angle = df[[left_col, right_col]].min().min()
+        max_angle = df[[left_col, right_col]].max().max()
+        return {"关节": joint, "最小角度": f"{min_angle:.2f}°", "最大角度": f"{max_angle:.2f}°"}
+    except KeyError:
+        return {"error": f"数据格式错误，找不到'{joint}'关节的角度数据。"}
+
+@tool
+def get_max_angle_difference(joint: str) -> dict:
+    """
+    计算在整个运动过程中，左右同名关节（如左膝和右膝）在任意一帧的最大角度差。
+    当用户询问关于身体"对称性"、"左右差异"或"两边不一致"等问题时，使用此工具。
+    参数 `joint` 的可选值为 '膝' 或 '髋'。
+    """
+    if 'analysis_df' not in st.session_state or st.session_state.analysis_df.empty:
+        return {"error": "无可用分析数据。请先上传并分析一个视频。"}
+    df = st.session_state.analysis_df
+    try:
+        left_col, right_col = f'左{joint}角度', f'右{joint}角度'
+        df['diff'] = (df[left_col] - df[right_col]).abs()
+        max_diff = df['diff'].max()
+        return {"关节": joint, "最大角度差": f"{max_diff:.2f}°"}
+    except KeyError:
+        return {"error": f"数据格式错误，找不到'{joint}'关节的角度数据。"}
+
 
 # --- RAG Setup: 创建并缓存Retriever ---
 @st.cache_resource
@@ -81,8 +123,75 @@ try:
         st.session_state.analysis_df = pd.DataFrame() # 用于存储分析数据
     if "retriever" not in st.session_state:
         st.session_state.retriever = get_retriever(api_key) # 初始化RAG
+    if "agent_executor" not in st.session_state:
+        # --- 将RAG包装成一个工具 ---
+        retriever_tool = None
+        if st.session_state.retriever:
+            # 创建一个可以处理历史对话的检索器
+            contextualize_q_system_prompt = """
+            Given a chat history and the latest user question 
+            which might reference context in the chat history, 
+            formulate a standalone question which can be understood 
+            without the chat history. Do NOT answer the question, 
+            just reformulate it if needed and otherwise return it as is.
+            """
+            contextualize_q_prompt = ChatPromptTemplate.from_messages(
+                [
+                    ("system", contextualize_q_system_prompt),
+                    MessagesPlaceholder("chat_history"),
+                    ("human", "{input}"),
+                ]
+            )
+            history_aware_retriever = create_history_aware_retriever(
+                st.session_state.llm, st.session_state.retriever, contextualize_q_prompt
+            )
+            # 创建文档链
+            qa_system_prompt = """
+            你是一位专业的AI运动教练。请严格根据下面提供的"知识库上下文"来回答用户的问题。
+            如果上下文中没有足够的信息来回答问题，请礼貌地告知用户"根据我现有的知识，我还无法回答这个问题"，不要尝试编造答案。
+            你的所有回答都必须使用简体中文。
+            
+            知识库上下文:
+            {context}
+            """
+            qa_prompt = ChatPromptTemplate.from_messages(
+                [
+                    ("system", qa_system_prompt),
+                    MessagesPlaceholder("chat_history"),
+                    ("human", "{input}"),
+                ]
+            )
+            question_answer_chain = create_stuff_documents_chain(st.session_state.llm, qa_prompt)
+            rag_chain = create_retrieval_chain(history_aware_retriever, question_answer_chain)
+            
+            # 定义工具
+            @tool
+            def knowledge_base_retriever(input: str, chat_history: list) -> str:
+                """
+                当用户询问关于运动、健身、营养、恢复等通用性知识时使用此工具。
+                不要用它来回答关于特定视频分析结果的问题。
+                """
+                response = rag_chain.invoke({"input": input, "chat_history": chat_history})
+                return response['answer']
+            retriever_tool = knowledge_base_retriever
+        
+        # --- 创建Agent ---
+        tools = [get_angle_extremes, get_max_angle_difference]
+        if retriever_tool:
+            tools.append(retriever_tool)
+
+        agent_prompt = ChatPromptTemplate.from_messages([
+            ("system", "你是一位专业的AI运动教练。你可以调用工具来查询知识库或分析数据。你的所有回答都必须使用简体中文。"),
+            MessagesPlaceholder(variable_name="chat_history"),
+            ("human", "{input}"),
+            MessagesPlaceholder(variable_name="agent_scratchpad"),
+        ])
+        
+        agent = create_tool_calling_agent(st.session_state.llm, tools, agent_prompt)
+        st.session_state.agent_executor = AgentExecutor(agent=agent, tools=tools, verbose=True)
+
 except Exception as e:
-    st.error(f"模型初始化失败，请检查API Key和网络代理。错误: {e}")
+    st.error(f"模型或Agent初始化失败: {e}")
     st.stop()
 
 
@@ -354,39 +463,20 @@ if st.session_state.history and isinstance(st.session_state.history[-1], AIMessa
             response_container = st.empty()
             collected_messages = ""
             
-            # --- RAG + Chat 逻辑 ---
-            # 如果RAG可用，则使用RAG链；否则退回普通对话
-            if st.session_state.retriever:
-                rag_prompt_template = ChatPromptTemplate.from_template("""
-                **请注意：** 你是一位专业的AI运动教练。请严格根据下面提供的"知识库上下文"来回答用户的问题。
-                如果上下文中没有足够的信息来回答问题，请礼貌地告知用户"根据我现有的知识，我还无法回答这个问题"，不要尝试编造答案。
-                你的所有回答都必须使用简体中文。
-
-                **知识库上下文:**
-                {context}
-
-                **用户问题:**
-                {input}
-                """)
-                
-                document_chain = create_stuff_documents_chain(st.session_state.llm, rag_prompt_template)
-                retrieval_chain = create_retrieval_chain(st.session_state.retriever, document_chain)
-                
-                # 流式传输RAG链的响应
-                response_stream = retrieval_chain.stream({"input": prompt, "history": st.session_state.history})
-                
+            # --- Agent 逻辑 ---
+            try:
+                response_stream = st.session_state.agent_executor.stream({
+                    "input": prompt,
+                    "chat_history": st.session_state.history
+                })
                 for chunk in response_stream:
-                    if "answer" in chunk:
-                        collected_messages += chunk["answer"]
+                    if "output" in chunk:
+                        collected_messages = chunk['output']
                         response_container.markdown(collected_messages, unsafe_allow_html=True)
-            else:
-                 # RAG不可用时的普通对话
-                response = st.session_state.llm.stream(st.session_state.history)
-                for chunk in response:
-                    if chunk.content:
-                        collected_messages += chunk.content
-                        response_container.markdown(collected_messages, unsafe_allow_html=True)
-            
+            except Exception as e:
+                collected_messages = f"调用Agent时出错: {e}"
+                response_container.markdown(collected_messages)
+
             # 将后续回复也加入历史
             st.session_state.history.append(AIMessage(content=collected_messages))
 
