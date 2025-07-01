@@ -1,0 +1,11 @@
+streamlit
+opencv-python
+mediapipe
+google-generativeai
+Pillow
+pandas
+numpy
+tabulate
+plotly
+streamlit-lottie
+streamlit-image-carousel 
