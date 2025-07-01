@@ -4,7 +4,6 @@
 # --- 最终优化与修正版本 v4 ---
 
 import streamlit as st
-import google.generativeai as genai
 import cv2
 import mediapipe as mp
 import tempfile
@@ -15,6 +14,16 @@ import numpy as np
 import pandas as pd
 import plotly.graph_objs as go
 import re
+import base64
+from langchain_google_genai import ChatGoogleGenerativeAI, HarmCategory, HarmBlockThreshold
+from langchain_core.messages import HumanMessage, AIMessage
+from langchain_community.document_loaders import DirectoryLoader
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+from langchain_google_genai import GoogleGenerativeAIEmbeddings
+from langchain_community.vectorstores import FAISS
+from langchain.chains import create_retrieval_chain
+from langchain.chains.combine_documents import create_stuff_documents_chain
+from langchain_core.prompts import ChatPromptTemplate
 
 # --- 页面配置和标题 ---
 st.set_page_config(
@@ -32,34 +41,46 @@ if not api_key:
     st.error("未检测到 Gemini API 密钥，请在 .streamlit/secrets.toml 中配置 GEMINI_API_KEY。")
     st.stop()
 
-try:
-    genai.configure(api_key=api_key)
-except Exception as e:
-    st.error(f"API密钥配置失败: {e}")
-    st.stop()
-
-
-# --- 初始化 MediaPipe ---
-mp_pose = mp.solutions.pose
-mp_drawing = mp.solutions.drawing_utils
-
 # --- 定义安全设置 ---
-safety_settings = [
-    {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
-    {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
-    {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"},
-    {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"},
-]
+safety_settings = {
+    HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE,
+    HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_NONE,
+    HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_NONE,
+    HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_NONE,
+}
 
-# --- 初始化会话状态 (实现记忆功能) ---
+# --- RAG Setup: 创建并缓存Retriever ---
+@st.cache_resource
+def get_retriever(api_key):
+    try:
+        loader = DirectoryLoader('./knowledge_base/', glob="**/*.md", show_progress=True)
+        documents = loader.load()
+        if not documents:
+            st.warning("知识库为空，RAG功能将不会生效。请在 knowledge_base 文件夹中添加Markdown文件。")
+            return None
+        text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=100)
+        texts = text_splitter.split_documents(documents)
+        embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001", google_api_key=api_key)
+        vectorstore = FAISS.from_documents(texts, embeddings)
+        return vectorstore.as_retriever()
+    except Exception as e:
+        st.error(f"创建RAG索引时出错: {e}")
+        return None
+
+# --- LangChain 初始化 ---
 try:
-    if "model" not in st.session_state:
-        st.session_state.model = genai.GenerativeModel(
-            'gemini-1.5-flash',
-            safety_settings=safety_settings
+    if "llm" not in st.session_state:
+        st.session_state.llm = ChatGoogleGenerativeAI(
+            model="gemini-1.5-flash",
+            google_api_key=api_key,
+            safety_settings=safety_settings,
         )
-    if "chat" not in st.session_state:
-        st.session_state.chat = st.session_state.model.start_chat(history=[])
+    if "history" not in st.session_state:
+        st.session_state.history = []  # LangChain的消息历史
+    if "analysis_df" not in st.session_state:
+        st.session_state.analysis_df = pd.DataFrame() # 用于存储分析数据
+    if "retriever" not in st.session_state:
+        st.session_state.retriever = get_retriever(api_key) # 初始化RAG
 except Exception as e:
     st.error(f"模型初始化失败，请检查API Key和网络代理。错误: {e}")
     st.stop()
@@ -71,7 +92,8 @@ with st.sidebar:
     
     # --- 优化点：改进"新建对话"交互 ---
     if st.button("✨ 新建对话", use_container_width=True):
-        st.session_state.chat = st.session_state.model.start_chat(history=[])
+        st.session_state.history = []
+        st.session_state.analysis_df = pd.DataFrame()
         st.success("新的对话已开始！")
         time.sleep(0.5) # 短暂显示成功信息，然后刷新
         st.rerun()
@@ -99,7 +121,7 @@ with st.sidebar:
 # --- 主聊天界面 ---
 
 # --- 优化点：增加欢迎页/引导区，避免冷启动 ---
-if not st.session_state.chat.history:
+if not st.session_state.history:
     st.markdown("""
         <div style="text-align: center; padding: 2rem 1rem;">
             <h2 style="font-weight: bold;">欢迎使用 AI 运动教练</h2>
@@ -115,24 +137,14 @@ if not st.session_state.chat.history:
     """, unsafe_allow_html=True)
 
 # 显示历史对话记录
-for message in st.session_state.chat.history:
-    if hasattr(message, 'role') and message.role in ['user', 'model', 'assistant']:
-        role = "assistant" if message.role == 'model' else message.role
-        with st.chat_message(role):
-            # 检查是否有下载按钮的元数据，避免重复显示
-            if "download" in message.parts[-1].text:
-                 # 这是一个简化的处理，实际应用可能需要更稳健的元数据方案
-                 st.markdown(message.parts[0].text, unsafe_allow_html=True)
-                 st.download_button(
-                     label="📥 下载本次分析报告",
-                     data=message.parts[0].text,
-                     file_name=f"ai_coach_report_{time.strftime('%Y%m%d-%H%M%S')}.md",
-                     mime="text/markdown",
-                 )
-            else:
-                for part in message.parts:
-                    if part.text:
-                        st.markdown(part.text, unsafe_allow_html=True)
+for message in st.session_state.history:
+    # 不显示初始的多模态用户消息，只显示AI回复和后续文本对话
+    if isinstance(message, AIMessage):
+        with st.chat_message("assistant"):
+            st.markdown(message.content, unsafe_allow_html=True)
+    elif isinstance(message, HumanMessage) and isinstance(message.content, str):
+         with st.chat_message("user"):
+            st.markdown(message.content, unsafe_allow_html=True)
 
 # --- 金牌功能：新增角度计算函数 ---
 def calculate_angle(a, b, c):
@@ -175,7 +187,7 @@ if analyze_button:
         sampled_frames_pil = []
         frame_indices_to_extract = [i * frame_interval for i in range(desired_frames)]
         
-        with mp_pose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5) as pose:
+        with mp.solutions.pose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5) as pose:
             for frame_index in frame_indices_to_extract:
                 cap.set(cv2.CAP_PROP_POS_FRAMES, frame_index)
                 ret, frame = cap.read()
@@ -187,23 +199,23 @@ if analyze_button:
                 annotated_image = frame.copy()
                 
                 if results.pose_landmarks:
-                    mp_drawing.draw_landmarks(
-                        annotated_image, results.pose_landmarks, mp_pose.POSE_CONNECTIONS,
-                        landmark_drawing_spec=mp_drawing.DrawingSpec(color=(245,117,66), thickness=2, circle_radius=2),
-                        connection_drawing_spec=mp_drawing.DrawingSpec(color=(245,66,230), thickness=2, circle_radius=2)
+                    mp.solutions.drawing_utils.draw_landmarks(
+                        annotated_image, results.pose_landmarks, mp.solutions.pose.POSE_CONNECTIONS,
+                        landmark_drawing_spec=mp.solutions.drawing_utils.DrawingSpec(color=(245,117,66), thickness=2, circle_radius=2),
+                        connection_drawing_spec=mp.solutions.drawing_utils.DrawingSpec(color=(245,66,230), thickness=2, circle_radius=2)
                     )
                 
                 # --- 金牌功能：计算角度并存储 ---
                 try:
                     landmarks = results.pose_landmarks.landmark
-                    left_hip = [landmarks[mp_pose.PoseLandmark.LEFT_HIP.value].x, landmarks[mp_pose.PoseLandmark.LEFT_HIP.value].y]
-                    left_knee = [landmarks[mp_pose.PoseLandmark.LEFT_KNEE.value].x, landmarks[mp_pose.PoseLandmark.LEFT_KNEE.value].y]
-                    left_ankle = [landmarks[mp_pose.PoseLandmark.LEFT_ANKLE.value].x, landmarks[mp_pose.PoseLandmark.LEFT_ANKLE.value].y]
-                    left_shoulder = [landmarks[mp_pose.PoseLandmark.LEFT_SHOULDER.value].x, landmarks[mp_pose.PoseLandmark.LEFT_SHOULDER.value].y]
-                    right_hip = [landmarks[mp_pose.PoseLandmark.RIGHT_HIP.value].x, landmarks[mp_pose.PoseLandmark.RIGHT_HIP.value].y]
-                    right_knee = [landmarks[mp_pose.PoseLandmark.RIGHT_KNEE.value].x, landmarks[mp_pose.PoseLandmark.RIGHT_KNEE.value].y]
-                    right_ankle = [landmarks[mp_pose.PoseLandmark.RIGHT_ANKLE.value].x, landmarks[mp_pose.PoseLandmark.RIGHT_ANKLE.value].y]
-                    right_shoulder = [landmarks[mp_pose.PoseLandmark.RIGHT_SHOULDER.value].x, landmarks[mp_pose.PoseLandmark.RIGHT_SHOULDER.value].y]
+                    left_hip = [landmarks[mp.solutions.pose.PoseLandmark.LEFT_HIP.value].x, landmarks[mp.solutions.pose.PoseLandmark.LEFT_HIP.value].y]
+                    left_knee = [landmarks[mp.solutions.pose.PoseLandmark.LEFT_KNEE.value].x, landmarks[mp.solutions.pose.PoseLandmark.LEFT_KNEE.value].y]
+                    left_ankle = [landmarks[mp.solutions.pose.PoseLandmark.LEFT_ANKLE.value].x, landmarks[mp.solutions.pose.PoseLandmark.LEFT_ANKLE.value].y]
+                    left_shoulder = [landmarks[mp.solutions.pose.PoseLandmark.LEFT_SHOULDER.value].x, landmarks[mp.solutions.pose.PoseLandmark.LEFT_SHOULDER.value].y]
+                    right_hip = [landmarks[mp.solutions.pose.PoseLandmark.RIGHT_HIP.value].x, landmarks[mp.solutions.pose.PoseLandmark.RIGHT_HIP.value].y]
+                    right_knee = [landmarks[mp.solutions.pose.PoseLandmark.RIGHT_KNEE.value].x, landmarks[mp.solutions.pose.PoseLandmark.RIGHT_KNEE.value].y]
+                    right_ankle = [landmarks[mp.solutions.pose.PoseLandmark.RIGHT_ANKLE.value].x, landmarks[mp.solutions.pose.PoseLandmark.RIGHT_ANKLE.value].y]
+                    right_shoulder = [landmarks[mp.solutions.pose.PoseLandmark.RIGHT_SHOULDER.value].x, landmarks[mp.solutions.pose.PoseLandmark.RIGHT_SHOULDER.value].y]
                     lk_angle = calculate_angle(left_hip, left_knee, left_ankle)
                     rk_angle = calculate_angle(right_hip, right_knee, right_ankle)
                     lh_angle = calculate_angle(left_shoulder, left_hip, left_knee)
@@ -226,14 +238,16 @@ if analyze_button:
         if not sampled_frames_pil:
             st.error("无法从视频中提取任何有效帧。")
         else:
-            df = pd.DataFrame(quantitative_data)
+            st.session_state.analysis_df = pd.DataFrame(quantitative_data)
+            df = st.session_state.analysis_df
             # --- 华丽关键帧横向大图展示 ---
             st.markdown("#### 关键帧预览")
             cols = st.columns(len(sampled_frames_pil))
             for i, img in enumerate(sampled_frames_pil):
                 with cols[i]:
                     st.image(img, caption=f"帧 {i+1}", use_container_width=True)
-            # --- 优化prompt，强调多模态理解，量化数据仅为辅助 ---
+
+            # --- LangChain Prompt & Invocation ---
             focus_prompt = f"用户的训练目标是{user_goal}。如有相关问题请适当关注。" if user_goal else ""
             data_prompt = f"\n以下为部分帧的量化数据，仅供你分析时参考，重点请结合视频帧的多模态理解进行综合判断：\n{df.to_markdown(index=False)}\n" if not df.empty else ""
             prompt_text = f"""
@@ -258,27 +272,43 @@ if analyze_button:
 
             你的语气应专业、严谨且富有鼓励性。请开始分析。
             """
-            # 保持full_prompt为图片内容
-            image_parts = []
+            
+            # 将PIL图像转换为LangChain所需格式
+            image_messages = []
             for img in sampled_frames_pil:
                 img.thumbnail((768, 768))
                 buf = io.BytesIO()
                 img.save(buf, format='JPEG')
-                image_parts.append({"mime_type": "image/jpeg", "data": buf.getvalue()})
-            full_prompt = [prompt_text] + image_parts
-            with st.chat_message("user"):
-                pass
+                base64_image = base64.b64encode(buf.getvalue()).decode('utf-8')
+                image_messages.append({
+                    "type": "image_url",
+                    "image_url": f"data:image/jpeg;base64,{base64_image}"
+                })
+
+            # 创建LangChain的多模态消息
+            user_message = HumanMessage(
+                content=[{"type": "text", "text": prompt_text}] + image_messages
+            )
+            
+            # 清空历史，开始新的分析会话
+            st.session_state.history = []
+
             try:
-                st.write("正在分析...")
-                response = st.session_state.chat.send_message(full_prompt, stream=True)
+                st.info("AI大模型正在生成分析报告...")
                 with st.chat_message("assistant"):
                     response_container = st.empty()
                     collected_messages = ""
+                    # 使用LangChain LLM进行流式调用
+                    response = st.session_state.llm.stream([user_message])
                     for chunk in response:
-                        if chunk.text:
-                            collected_messages += chunk.text
+                        if chunk.content:
+                            collected_messages += chunk.content
                             response_container.markdown(collected_messages, unsafe_allow_html=True)
-                    # --- plotly折线图 ---
+
+                    # 将AI的完整回复存入历史记录
+                    st.session_state.history.append(AIMessage(content=collected_messages))
+
+                    # --- 分析完成后的图表和下载按钮 ---
                     if not df.empty:
                         with st.expander("📈 详细数据图表", expanded=True):
                             # 膝关节角度变化
@@ -294,7 +324,7 @@ if analyze_button:
                             fig_hip.update_layout(title='髋关节角度变化', xaxis_title='帧号', yaxis_title='角度 (°)', template='plotly_dark')
                             st.plotly_chart(fig_hip, use_container_width=True)
                             st.dataframe(df)
-                    # --- 下载报告 ---
+                    
                     if collected_messages:
                         st.download_button(
                             label="📥 下载本次分析报告",
@@ -303,26 +333,60 @@ if analyze_button:
                             mime="text/markdown",
                         )
                 st.success("分析完成！")
-            except genai.types.BlockedPromptError as e:
-                st.error("请求被安全策略阻止，可能是图像或文本内容被误判。")
-                print(e)
             except Exception as e:
-                st.error(f"调用MLLM时发生错误: {e}")
+                error_str = str(e)
+                if "safety" in error_str.lower() or "blocked" in error_str.lower():
+                     st.error("请求被安全策略阻止，可能是图像或文本内容被误判。请尝试更换视频或调整提示。")
+                else:
+                     st.error(f"调用AI模型时发生错误: {e}")
                 print(e)
 
-# 仅在AI回复后显示输入框
-if st.session_state.chat.history and st.session_state.chat.history[-1].role == 'model':
+# 仅在AI有回复后（即分析完成后）显示输入框
+if st.session_state.history and isinstance(st.session_state.history[-1], AIMessage):
     if prompt := st.chat_input('可以继续向AI提问，例如"我的左腿应该注意什么？"'):
+        user_prompt_message = HumanMessage(content=prompt)
+        st.session_state.history.append(user_prompt_message)
+        
         with st.chat_message("user"):
             st.markdown(prompt)
 
         with st.chat_message("assistant"):
             response_container = st.empty()
             collected_messages = ""
-            # 流式传输来自后续聊天消息的响应
-            response = st.session_state.chat.send_message(prompt, stream=True)
-            for chunk in response:
-                if chunk.text:
-                    collected_messages += chunk.text
-                    response_container.markdown(collected_messages, unsafe_allow_html=True)
+            
+            # --- RAG + Chat 逻辑 ---
+            # 如果RAG可用，则使用RAG链；否则退回普通对话
+            if st.session_state.retriever:
+                rag_prompt_template = ChatPromptTemplate.from_template("""
+                **请注意：** 你是一位专业的AI运动教练。请严格根据下面提供的"知识库上下文"来回答用户的问题。
+                如果上下文中没有足够的信息来回答问题，请礼貌地告知用户"根据我现有的知识，我还无法回答这个问题"，不要尝试编造答案。
+                你的所有回答都必须使用简体中文。
+
+                **知识库上下文:**
+                {context}
+
+                **用户问题:**
+                {input}
+                """)
+                
+                document_chain = create_stuff_documents_chain(st.session_state.llm, rag_prompt_template)
+                retrieval_chain = create_retrieval_chain(st.session_state.retriever, document_chain)
+                
+                # 流式传输RAG链的响应
+                response_stream = retrieval_chain.stream({"input": prompt, "history": st.session_state.history})
+                
+                for chunk in response_stream:
+                    if "answer" in chunk:
+                        collected_messages += chunk["answer"]
+                        response_container.markdown(collected_messages, unsafe_allow_html=True)
+            else:
+                 # RAG不可用时的普通对话
+                response = st.session_state.llm.stream(st.session_state.history)
+                for chunk in response:
+                    if chunk.content:
+                        collected_messages += chunk.content
+                        response_container.markdown(collected_messages, unsafe_allow_html=True)
+            
+            # 将后续回复也加入历史
+            st.session_state.history.append(AIMessage(content=collected_messages))
 

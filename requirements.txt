@@ -1,11 +1,12 @@
 streamlit
 opencv-python
 mediapipe
-google-generativeai
 Pillow
-pandas
 numpy
-tabulate
+pandas
 plotly
-streamlit-lottie
-streamlit-image-carousel 
+langchain
+langchain-google-genai
+langchain-community
+faiss-cpu
+tiktoken 
