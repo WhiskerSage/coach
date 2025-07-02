@@ -80,10 +80,90 @@ else:
 
         if selected_session_time:
             session_details = sessions_df[sessions_df['timestamp'].dt.strftime('%Y-%m-%d %H:%M:%S') == selected_session_time].iloc[0]
+            
+            # --- 显示AI分析报告 ---
             with st.expander("AI 分析报告原文", expanded=True):
                 st.markdown(session_details['report'])
             
-            # 您可以在这里添加更多关于单次会话的详细数据展示，例如图表等
-            st.write("---")
+            # --- 核心修复：解析并显示量化数据图表 ---
+            try:
+                # 从JSON字符串恢复DataFrame
+                df_json_str = session_details.get('dataframe_json')
+                if df_json_str and df_json_str != 'null' and df_json_str.strip():
+                    analysis_df = pd.read_json(df_json_str, orient='split')
+                    
+                    if not analysis_df.empty and len(analysis_df) > 0:
+                        st.write("---")
+                        st.subheader("📈 本次会话量化数据图表")
+                        
+                        # 确保数据列存在
+                        required_cols = ['帧号', '左膝角度', '右膝角度', '左髋角度', '右髋角度']
+                        if all(col in analysis_df.columns for col in required_cols):
+                            
+                            # 膝关节角度变化
+                            fig_knee = go.Figure()
+                            fig_knee.add_trace(go.Scatter(
+                                x=analysis_df['帧号'], 
+                                y=analysis_df['左膝角度'], 
+                                mode='lines+markers', 
+                                name='左膝', 
+                                line=dict(color='red', width=4), 
+                                marker=dict(size=10)
+                            ))
+                            fig_knee.add_trace(go.Scatter(
+                                x=analysis_df['帧号'], 
+                                y=analysis_df['右膝角度'], 
+                                mode='lines+markers', 
+                                name='右膝', 
+                                line=dict(color='blue', width=4), 
+                                marker=dict(size=10)
+                            ))
+                            fig_knee.update_layout(
+                                title='膝关节角度变化', 
+                                xaxis_title='帧号', 
+                                yaxis_title='角度 (°)', 
+                                template='plotly_dark',
+                                height=400
+                            )
+                            st.plotly_chart(fig_knee, use_container_width=True, key=f"knee_chart_{selected_session_time}")
+                            
+                            # 髋关节角度变化
+                            fig_hip = go.Figure()
+                            fig_hip.add_trace(go.Scatter(
+                                x=analysis_df['帧号'], 
+                                y=analysis_df['左髋角度'], 
+                                mode='lines+markers', 
+                                name='左髋', 
+                                line=dict(color='orange', width=4), 
+                                marker=dict(size=10)
+                            ))
+                            fig_hip.add_trace(go.Scatter(
+                                x=analysis_df['帧号'], 
+                                y=analysis_df['右髋角度'], 
+                                mode='lines+markers', 
+                                name='右髋', 
+                                line=dict(color='green', width=4), 
+                                marker=dict(size=10)
+                            ))
+                            fig_hip.update_layout(
+                                title='髋关节角度变化', 
+                                xaxis_title='帧号', 
+                                yaxis_title='角度 (°)', 
+                                template='plotly_dark',
+                                height=400
+                            )
+                            st.plotly_chart(fig_hip, use_container_width=True, key=f"hip_chart_{selected_session_time}")
+                            
+                            with st.expander("📊 查看原始数据表"):
+                                st.dataframe(analysis_df, use_container_width=True)
+                        else:
+                            st.warning("数据格式不完整，缺少必要的角度数据列。")
+                    else:
+                        st.info("本次会话的数据表为空。")
+                else:
+                    st.info("本次会话没有存档详细的图表数据。")
+            except Exception as e:
+                st.error(f"加载图表数据时出错: {e}")
+                st.write(f"调试信息 - JSON数据: {df_json_str[:100] if df_json_str else 'None'}...")
 
-    st.page_link("app.py", label="返回主页", icon="🏠") 
+    st.page_link("app.py", label="返回主页", icon="🏠")

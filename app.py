@@ -1,5 +1,5 @@
 # 先切换端口
-# set HTTPS_PROXY=http://127.0.0.1:7897 一定要在cmd里切换到你vpn的端口，不然连不上。一定要在cmd里！！！
+# set HTTPS_PROXY=http://127.0.0.1:7897 一定要在cmd里切换到你vpn的端口，不然连不上。一定要在cmd里！！！加拿大、美国节点最好
 # streamlit run app.py 来启动
 # --- 最终优化与修正版本 v4 ---
 
@@ -79,19 +79,33 @@ def load_data():
 
 def save_data(user: str, report: str, df: pd.DataFrame):
     """保存一次分析会话到JSON文件"""
-    all_data = load_data()
-    if user not in all_data:
-        all_data[user] = []
-    
-    session_data = {
-        "timestamp": datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-        "report": report,
-        "dataframe_json": df.to_json(orient='split')
-    }
-    all_data[user].append(session_data)
+    try:
+        all_data = load_data()
+        if user not in all_data:
+            all_data[user] = []
 
-    with open(DB_FILE, 'w', encoding='utf-8') as f:
-        json.dump(all_data, f, ensure_ascii=False, indent=4)
+        # --- 核心修复：确保数据类型是JSON可序列化的 ---
+        # 创建一个副本以避免修改原始的 session_state df
+        df_copy = df.copy()
+        # 遍历所有列，如果数据是浮点数类型，则转换为Python内置的float
+        for col in df_copy.columns:
+            if pd.api.types.is_float_dtype(df_copy[col]):
+                df_copy[col] = df_copy[col].astype(float)
+        
+        session_data = {
+            "timestamp": datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+            "report": report,
+            "dataframe_json": df_copy.to_json(orient='split')
+        }
+        all_data[user].append(session_data)
+
+        with open(DB_FILE, 'w', encoding='utf-8') as f:
+            json.dump(all_data, f, ensure_ascii=False, indent=4)
+        
+        print(f"成功保存数据到 {DB_FILE}，用户: {user}")
+    except Exception as e:
+        print(f"保存数据时出错: {e}")
+        raise e
 
 # --- 金牌功能：定义数据分析工具 ---
 @tool
@@ -466,38 +480,86 @@ if analyze_button:
                     # 将AI的完整回复存入历史记录
                     st.session_state.history.append(AIMessage(content=collected_messages))
 
+                    # --- 核心修复：自动存档分析结果 ---
+                    if collected_messages and username:
+                        try:
+                            save_data(username, collected_messages, df)
+                            st.success(f"✅ 分析结果已自动为用户 {username} 存档！")
+                        except Exception as e:
+                            st.error(f"❌ 自动存档失败: {e}")
+                            print(f"存档错误详情: {e}")
+
                     # --- 分析完成后的图表和下载按钮 ---
                     if not df.empty:
-                        with st.expander("📈 查看详细数据图表", expanded=False): # 折叠
-                            # 膝关节角度变化
-                            fig_knee = go.Figure()
-                            fig_knee.add_trace(go.Scatter(x=df['帧号'], y=df['左膝角度'], mode='lines+markers', name='左膝', line=dict(color='red', width=4), marker=dict(size=10)))
-                            fig_knee.add_trace(go.Scatter(x=df['帧号'], y=df['右膝角度'], mode='lines+markers', name='右膝', line=dict(color='blue', width=4), marker=dict(size=10)))
-                            fig_knee.update_layout(title='膝关节角度变化', xaxis_title='帧号', yaxis_title='角度 (°)', template='plotly_dark')
-                            st.plotly_chart(fig_knee, use_container_width=True)
-                            # 髋关节角度变化
-                            fig_hip = go.Figure()
-                            fig_hip.add_trace(go.Scatter(x=df['帧号'], y=df['左髋角度'], mode='lines+markers', name='左髋', line=dict(color='orange', width=4), marker=dict(size=10)))
-                            fig_hip.add_trace(go.Scatter(x=df['帧号'], y=df['右髋角度'], mode='lines+markers', name='右髋', line=dict(color='green', width=4), marker=dict(size=10)))
-                            fig_hip.update_layout(title='髋关节角度变化', xaxis_title='帧号', yaxis_title='角度 (°)', template='plotly_dark')
-                            st.plotly_chart(fig_hip, use_container_width=True)
-                            st.dataframe(df)
+                        st.write("---")
+                        st.subheader("📈 详细数据图表")
+                        
+                        # 膝关节角度变化
+                        fig_knee = go.Figure()
+                        fig_knee.add_trace(go.Scatter(
+                            x=df['帧号'], 
+                            y=df['左膝角度'], 
+                            mode='lines+markers', 
+                            name='左膝', 
+                            line=dict(color='red', width=4), 
+                            marker=dict(size=10)
+                        ))
+                        fig_knee.add_trace(go.Scatter(
+                            x=df['帧号'], 
+                            y=df['右膝角度'], 
+                            mode='lines+markers', 
+                            name='右膝', 
+                            line=dict(color='blue', width=4), 
+                            marker=dict(size=10)
+                        ))
+                        fig_knee.update_layout(
+                            title='膝关节角度变化', 
+                            xaxis_title='帧号', 
+                            yaxis_title='角度 (°)', 
+                            template='plotly_dark',
+                            height=400
+                        )
+                        st.plotly_chart(fig_knee, use_container_width=True, key="knee_chart")
+                        
+                        # 髋关节角度变化
+                        fig_hip = go.Figure()
+                        fig_hip.add_trace(go.Scatter(
+                            x=df['帧号'], 
+                            y=df['左髋角度'], 
+                            mode='lines+markers', 
+                            name='左髋', 
+                            line=dict(color='orange', width=4), 
+                            marker=dict(size=10)
+                        ))
+                        fig_hip.add_trace(go.Scatter(
+                            x=df['帧号'], 
+                            y=df['右髋角度'], 
+                            mode='lines+markers', 
+                            name='右髋', 
+                            line=dict(color='green', width=4), 
+                            marker=dict(size=10)
+                        ))
+                        fig_hip.update_layout(
+                            title='髋关节角度变化', 
+                            xaxis_title='帧号', 
+                            yaxis_title='角度 (°)', 
+                            template='plotly_dark',
+                            height=400
+                        )
+                        st.plotly_chart(fig_hip, use_container_width=True, key="hip_chart")
+                        
+                        with st.expander("📊 查看原始数据表"):
+                            st.dataframe(df, use_container_width=True)
                     
+                    # 只保留下载功能
                     if collected_messages:
-                        # 同时提供下载和存档功能
-                        col1, col2 = st.columns(2)
-                        with col1:
-                            st.download_button(
-                                label="📥 下载本次分析报告",
-                                data=collected_messages,
-                                file_name=f"ai_coach_report_{username}_{time.strftime('%Y%m%d')}.md",
-                                mime="text/markdown",
-                                use_container_width=True
-                            )
-                        with col2:
-                            if st.button("📝 存档本次分析结果", use_container_width=True):
-                                save_data(username, collected_messages, df)
-                                st.toast(f"分析结果已为用户 {username} 存档！")
+                        st.download_button(
+                            label="📥 下载本次分析报告",
+                            data=collected_messages,
+                            file_name=f"ai_coach_report_{username}_{time.strftime('%Y%m%d_%H%M%S')}.md",
+                            mime="text/markdown",
+                            use_container_width=True
+                        )
                 st.success("分析完成！")
             except Exception as e:
                 error_str = str(e)
