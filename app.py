@@ -15,6 +15,8 @@ import pandas as pd
 import plotly.graph_objs as go
 import re
 import base64
+import json
+from datetime import datetime
 from langchain_google_genai import ChatGoogleGenerativeAI, HarmCategory, HarmBlockThreshold
 from langchain_core.messages import HumanMessage, AIMessage
 from langchain_community.document_loaders import DirectoryLoader
@@ -31,12 +33,23 @@ from langchain.chains.history_aware_retriever import create_history_aware_retrie
 
 # --- 页面配置和标题 ---
 st.set_page_config(
-    page_title="AI运动教练 Demo",
-    page_icon="🤖",
+    page_title="AI运动教练",
+    page_icon="🏃‍♂️",
     layout="wide"
 )
-st.title("🤖 AI 运动教练")
-st.caption("上传一段运动视频，让AI为你分析姿态。支持连续对话。")
+
+# --- 隐藏Streamlit自带页脚 ---
+hide_streamlit_style = """
+            <style>
+            #MainMenu {visibility: hidden;}
+            footer {visibility: hidden;}
+            </style>
+            """
+st.markdown(hide_streamlit_style, unsafe_allow_html=True) 
+
+
+st.title("🏃‍♂️ AI 运动教练")
+st.caption("结合无人机视觉，您的专属运动表现分析助手")
 
 
 # --- Gemini API 配置 (自动从 secrets 读取) ---
@@ -52,6 +65,33 @@ safety_settings = {
     HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_NONE,
     HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_NONE,
 }
+
+# --- 数据库功能 (JSON) ---
+DB_FILE = "database.json"
+
+def load_data():
+    """从JSON文件中加载所有用户数据"""
+    try:
+        with open(DB_FILE, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {}
+
+def save_data(user: str, report: str, df: pd.DataFrame):
+    """保存一次分析会话到JSON文件"""
+    all_data = load_data()
+    if user not in all_data:
+        all_data[user] = []
+    
+    session_data = {
+        "timestamp": datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+        "report": report,
+        "dataframe_json": df.to_json(orient='split')
+    }
+    all_data[user].append(session_data)
+
+    with open(DB_FILE, 'w', encoding='utf-8') as f:
+        json.dump(all_data, f, ensure_ascii=False, indent=4)
 
 # --- 金牌功能：定义数据分析工具 ---
 @tool
@@ -197,20 +237,17 @@ except Exception as e:
 
 # --- 侧边栏 UI ---
 with st.sidebar:
-    st.header("⚙️ 控制面板") # 优化点：使用更通用的图标
+    st.header("⚙️ 控制面板") 
     
-    # --- 优化点：改进"新建对话"交互 ---
-    if st.button("✨ 新建对话", use_container_width=True):
-        st.session_state.history = []
-        st.session_state.analysis_df = pd.DataFrame()
-        st.success("新的对话已开始！")
-        time.sleep(0.5) # 短暂显示成功信息，然后刷新
-        st.rerun()
+    # --- 用户系统 ---
+    username = st.text_input("👤 **你的名字**", placeholder="请输入你的名字用于存档")
+    
+    with st.expander("🎯 设定本次训练目标 (可选)"):
+        user_goal = st.text_input("我的训练目标:", placeholder="例如：改善深蹲时膝盖内扣")
 
-    # --- 铜牌功能：增加用户目标输入框 ---
-    user_goal = st.text_input("我的训练目标:", placeholder="例如：改善深蹲时膝盖内扣")
     st.divider()
 
+    st.subheader("上传与分析")
     # --- 优化点：增加用户引导 ---
     uploaded_file = st.file_uploader(
         "上传你的运动视频",
@@ -224,7 +261,13 @@ with st.sidebar:
         help="选择从视频中抽取的关键画面数量。数量越多，分析越精细，但处理时间也更长。"
     )
     
-    analyze_button = st.button("开始分析", use_container_width=True, disabled=not uploaded_file)
+    analyze_button = st.button(
+        "开始分析", 
+        use_container_width=True, 
+        disabled=not (uploaded_file and username)
+    )
+    if not username:
+        st.warning("请输入你的名字以启用分析按钮。")
 
 
 # --- 主聊天界面 ---
@@ -232,16 +275,22 @@ with st.sidebar:
 # --- 优化点：增加欢迎页/引导区，避免冷启动 ---
 if not st.session_state.history:
     st.markdown("""
-        <div style="text-align: center; padding: 2rem 1rem;">
-            <h2 style="font-weight: bold;">欢迎使用 AI 运动教练</h2>
-            <p>我是您的专属AI教练，可以分析您上传的运动视频，提供专业的姿态评估和改进建议。</p>
+        <div style="
+            border: 2px solid #262730; 
+            border-radius: 10px; 
+            padding: 2rem 1rem; 
+            text-align: center; 
+            background-color: #1a1c24;">
+            <h2 style="font-weight: bold; color: #FAFAFA;">欢迎使用 AI 运动教练</h2>
+            <p style="color: #c9c9c9;">我是您的专属AI教练，可以分析您上传的运动视频，提供专业的姿态评估和改进建议。</p>
             <p><strong>请按以下步骤开始：</strong></p>
-            <ol style="display: inline-block; text-align: left; margin-top: 1rem;">
-                <li>在左侧的 <strong>控制面板</strong> 上传您的运动视频。</li>
+            <ol style="display: inline-block; text-align: left; margin-top: 1rem; color: #c9c9c9;">
+                <li>在左侧的 <strong>控制面板</strong> 输入您的名字。</li>
+                <li>上传您的运动视频。</li>
                 <li>（可选）调整您希望分析的 <strong>关键帧数量</strong>。</li>
                 <li>点击 <strong>"开始分析"</strong> 按钮，稍等片刻即可获得报告。</li>
             </ol>
-            <p>期待看到您的精彩表现！</p>
+            <p style="margin-top: 1.5rem; color: #a0a0a0;">期待看到您的精彩表现！</p>
         </div>
     """, unsafe_allow_html=True)
 
@@ -419,7 +468,7 @@ if analyze_button:
 
                     # --- 分析完成后的图表和下载按钮 ---
                     if not df.empty:
-                        with st.expander("📈 详细数据图表", expanded=True):
+                        with st.expander("📈 查看详细数据图表", expanded=False): # 折叠
                             # 膝关节角度变化
                             fig_knee = go.Figure()
                             fig_knee.add_trace(go.Scatter(x=df['帧号'], y=df['左膝角度'], mode='lines+markers', name='左膝', line=dict(color='red', width=4), marker=dict(size=10)))
@@ -435,12 +484,20 @@ if analyze_button:
                             st.dataframe(df)
                     
                     if collected_messages:
-                        st.download_button(
-                            label="📥 下载本次分析报告",
-                            data=collected_messages,
-                            file_name=f"ai_coach_report_{time.strftime('%Y%m%d-%H%M%S')}.md",
-                            mime="text/markdown",
-                        )
+                        # 同时提供下载和存档功能
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            st.download_button(
+                                label="📥 下载本次分析报告",
+                                data=collected_messages,
+                                file_name=f"ai_coach_report_{username}_{time.strftime('%Y%m%d')}.md",
+                                mime="text/markdown",
+                                use_container_width=True
+                            )
+                        with col2:
+                            if st.button("📝 存档本次分析结果", use_container_width=True):
+                                save_data(username, collected_messages, df)
+                                st.toast(f"分析结果已为用户 {username} 存档！")
                 st.success("分析完成！")
             except Exception as e:
                 error_str = str(e)

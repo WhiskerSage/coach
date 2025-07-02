@@ -1,87 +1,112 @@
-# AI 运动教练 Demo
+# 🏃‍♂️ AI 运动教练
 
-本项目是一个基于 Streamlit 的 AI 运动教练应用，集成 Google Gemini Pro 大模型与 MediaPipe 姿态检测，支持上传运动视频，自动分析动作姿态并给出专业评估与改进建议。界面美观，支持连续对话，所有分析与交互均为简体中文。
+[![Streamlit App](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://share.streamlit.io/your_username/your_repository/main/app.py)
 
-## ✨ 主要功能
+这是一个结合了多模态大语言模型、计算机视觉和智能代理（Agent）技术的AI运动教练应用。它能够分析用户上传的运动视频，提供专业的姿态评估、量化数据分析、知识问答和长期的运动表现追踪。
 
-- **AI 姿态分析**：上传运动视频，自动抽取关键帧，利用 MediaPipe 进行人体姿态检测，并计算关键运动角度。
-- **Gemini Pro 智能评估**：通过 LangChain 调用 Google Gemini Pro 大模型，基于多帧姿态快照与量化数据，给出四大维度（对称性、协调性、核心稳定性、动作幅度）专业打分与诊断。
-- **知识库问答 (RAG)**：内置运动常识知识库，能够根据专业资料回答用户的通用健身问题，避免模型凭空捏造。
-- **智能数据查询 (Function Calling)**：分析报告生成后，可直接向AI提问关于具体量化数据的问题（如"我的左膝和右膝最大角度差是多少？"），AI能调用工具实时计算并回答。
-- **个性化反馈**：用户可输入训练目标（如"改善深蹲膝内扣"），AI 将提供更具针对性的分析。
-- **结构化报告**：输出 Markdown 表格与详细分析，支持一键下载分析报告。
-- **连续对话**：分析后可继续追问，AI 记忆上下文，持续提供个性化建议。
-- **美观易用**：现代化 UI，支持自定义主题、品牌 Logo、简体中文全流程。
 
-## 🖼️ 技术栈
 
-- [Streamlit](https://streamlit.io/)：前端界面与交互
-- [LangChain](https://python.langchain.com/)：作为应用核心框架，构建包含RAG和Function Calling能力的智能代理 (Agent)
-- [MediaPipe](https://mediapipe.dev/)：人体姿态检测
-- [OpenCV](https://opencv.org/)：视频帧处理
-- [Pandas](https://pandas.pydata.org/)：数据处理与分析
-- [FAISS](https://faiss.ai/)：本地向量数据库，支持高效的知识库检索
-- [Pillow](https://python-pillow.org/)：图像处理
+---
 
-## 🚀 安装与运行
+## 🌟 项目亮点 (Key Features)
 
-1. **安装依赖**
+- **🤖 多模态视频分析**: 采用 Google `Gemini 1.5 Flash` 模型，能够直接理解视频内容，从多个关键帧中提取视觉信息，生成综合性的运动分析报告。
+- **🦾 计算机视觉量化**: 集成 `MediaPipe` 框架，自动识别和追踪人体的关键骨骼点，实时计算膝关节、髋关节等关键角度，为评估提供数据支撑。
+- **🧠 LangChain 智能代理 (Agent)**:
+    - **RAG 知识库**: 搭载了基于本地知识库的检索增强生成（RAG）系统。当用户提出通用的运动健康问题时，AI可以从`knowledge_base`目录下的文档中检索信息，提供有据可依的答案。
+    - **Function Calling 数据工具**: AI 能够智能调用Python函数（工具）来执行特定的数据查询任务，例如查询某个动作的最大、最小角度，或计算左右肢体的对称性差异。
+- **📈 长期表现追踪**:
+    - **多用户数据存储**: 分析结果会以用户名进行区分，并保存在本地的 `database.json` 文件中。
+    - **运动表现仪表盘**: 应用内置了一个独立的仪表盘页面，可以读取和展示指定用户的历史分析数据，方便用户追踪自己的进步轨迹。
+- **🎨 可定制的 Streamlit 前端**:
+    - 基于 Streamlit 构建，界面简洁、交互友好。
+    - 通过 `.streamlit/config.toml` 文件轻松定制应用的主题、颜色和字体。
 
-建议使用 Python 3.8+，推荐虚拟环境。
+---
 
+## 🛠️ 技术栈 (Tech Stack)
+
+- **前端**: Streamlit
+- **AI 框架**: LangChain
+- **大语言模型 (LLM)**: Google Gemini 1.5 Flash
+- **嵌入模型 (Embedding)**: Google `embedding-001`
+- **计算机视觉**: OpenCV, MediaPipe
+- **向量数据库**: FAISS (本地)
+- **核心依赖**: `langchain-google-genai`, `streamlit`, `opencv-python`, `mediapipe`, `faiss-cpu`
+
+---
+
+## 🚀 如何运行 (Getting Started)
+
+### 1. 先决条件
+- Python 3.8+
+- 一个配置好的 Google Cloud 项目，并已启用 "Generative Language API"。
+
+### 2. 克隆仓库
+```bash
+git clone https://github.com/WhiskerSage/coach
+```
+
+### 3. 创建并激活虚拟环境 (推荐)
+```bash
+# Windows
+python -m venv venv
+venv\Scripts\activate
+
+# macOS / Linux
+python3 -m venv venv
+source venv/bin/activate
+```
+
+### 4. 安装依赖
+项目所需的所有依赖都已在 `requirements.txt` 中列出。
 ```bash
 pip install -r requirements.txt
 ```
-
-2. **配置 Gemini API Key**
-
-在项目根目录下创建 `.streamlit/secrets.toml` 文件，并添加：
-
-```toml
-GEMINI_API_KEY = "你的Gemini API密钥"
+如果在使用RAG功能时遇到 `unstructured` 相关的错误，请确保安装了Markdown解析的附加依赖：
+```bash
+pip install "unstructured[md]"
 ```
 
-3. **启动应用**
+### 5. 配置 API 密钥
+在项目根目录下创建一个名为 `.streamlit` 的文件夹（如果尚不存在），然后在其中创建一个名为 `secrets.toml` 的文件。填入你的 Gemini API 密钥：
 
+```toml
+# .streamlit/secrets.toml
+GEMINI_API_KEY = "你的Google_API_密钥"
+```
+
+### 6. 运行应用
 ```bash
 streamlit run app.py
 ```
+应用将在你的本地浏览器中自动打开。
 
-## 📹 使用说明
+---
 
-1. 在左侧"控制面板"上传你的运动视频（支持 mp4/mov/avi，建议5-15秒）。
-2. 选择分析帧数，点击"开始分析"。
-3. 稍等片刻，AI 会自动分析并输出结构化报告。
-4. 可下载分析报告，或继续与AI对话获取个性化建议（例如："深蹲怎么做才标准？"、"我左右膝最大角度差是多少？"）。
+## 📂 项目结构 (Project Structure)
 
-## 🤖 智能交互 (Agent & Function Calling)
+```
+coach/
+│
+├── .streamlit/
+│   ├── config.toml         # Streamlit 主题配置文件
+│   └── secrets.toml        # 存放 API 密钥
+│
+├── app.py                  # 主应用文件：视频上传、分析、聊天交互
+│
+├── pages/
+│   └── 1_📈_运动表现仪表盘.py # 仪表盘页面，用于展示历史数据
+│
+├── knowledge_base/
+│   └── 运动常识.md         # RAG 知识库的源文件
+│
+├── database.json           # 存储用户分析结果的数据库文件
+│
+├── requirements.txt        # Python 依赖列表
+│
+└── README.md               # 项目说明文件
+```
+---
 
-- 本项目的核心是一个由 LangChain Agent 驱动的智能引擎。
-- 该 Agent 掌握两类工具：
-    1.  **知识库检索工具**：当被问及通用健身知识时，调用RAG链查询本地知识库。
-    2.  **数据分析工具**：当被问及本次视频分析的具体数据时，调用Python函数实时计算，例如查询动作幅度、计算左右肢体差异等。
-- 这种架构使得AI教练不仅能"博览群书"，还能"精于计算"，实现了真正的智能化、可交互的分析体验。
 
-## 🧠 知识库 (RAG)
-
-- 本项目集成了检索增强生成 (RAG) 技术，能够基于本地知识库提供可靠问答。
-- 知识库位于 `knowledge_base` 文件夹内，您可以自由添加或修改其中的 Markdown (`.md`) 文件。
-- 应用启动时会自动加载所有 `.md` 文件并建立索引。
-- 在与AI教练对话时，它会优先从这些文件中寻找答案，为您提供更精准、可信的建议。
-
-## 🏋️‍♂️ 姿态检测说明
-
-- 本项目采用 MediaPipe Pose 进行人体姿态检测。
-- 自动从视频中均匀抽取多帧，检测33个身体关键点并可视化骨架。
-- **亮点**：不仅进行可视化，还会进一步计算关键节点的生物力学角度（如膝关节、髋关节），为AI分析提供精确的量化依据。
-- 检测结果（图像+量化角度）将共同作为 Gemini Pro 分析的输入，极大提升评估的专业性和深度。
-
-## 💡 亮点特色
-
-- **Agent驱动的智能交互**：集成Function Calling，AI能理解复杂问题、调用工具，实现对量化数据的精准查询与计算。
-- **量化与定性结合**：结合姿态可视化与关键角度量化数据，分析更科学。
-- **RAG赋能**：内置可扩展的本地知识库，让AI的回答有据可循，更专业可靠。
-- 全流程简体中文支持，适合中文用户。
-- 结构化输出，报告清晰易懂。
-- 支持连续对话，体验更智能。
-- 现代化UI，支持品牌化包装。
