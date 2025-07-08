@@ -265,20 +265,31 @@ with st.sidebar:
     # --- 优化点：增加用户引导 ---
     uploaded_file = st.file_uploader(
         "上传你的运动视频",
-        type=["mp4", "mov", "avi"],
         help="建议上传5-15秒的短视频，以获得最佳分析速度和效果。"
     )
+
+    # --- 核心修复：手动进行文件类型验证以绕过Streamlit的bug ---
+    is_valid_file = False
+    if uploaded_file is not None:
+        # 获取文件名
+        file_name = uploaded_file.name
+        # 检查文件扩展名
+        allowed_extensions = ['.mp4', '.mov', '.avi']
+        if any(file_name.lower().endswith(ext) for ext in allowed_extensions):
+            is_valid_file = True
+        else:
+            st.error(f"文件格式无效。请上传以下格式的视频文件: {', '.join(allowed_extensions)}")
     
-    desired_frames = st.slider(
-        "分析强度 (帧数)", # 优化点：标签更易懂
-        min_value=2, max_value=10, value=6, step=1,
-        help="选择从视频中抽取的关键画面数量。数量越多，分析越精细，但处理时间也更长。"
+    desired_frames = st.number_input(
+        "自定义分析帧数",
+        min_value=2, max_value=30, value=6, step=1,
+        help="输入您希望从视频中抽取的关键画面数量。数量越多，分析越精細，但处理时间也更长。建议范围在 5-20 之间。"
     )
     
     analyze_button = st.button(
         "开始分析", 
         use_container_width=True, 
-        disabled=not (uploaded_file and username)
+        disabled=not (uploaded_file and username and is_valid_file)
     )
     if not username:
         st.warning("请输入你的名字以启用分析按钮。")
