@@ -38,23 +38,345 @@ from typing import List, Any
 
 # --- 页面配置和标题 ---
 st.set_page_config(
-    page_title="AI运动教练 V1",
-    page_icon="🏃‍♂️",
+    page_title="AI COACH V1",
+    page_icon=None,
     layout="wide"
 )
 
-# --- 隐藏Streamlit自带页脚 ---
-hide_streamlit_style = """
-            <style>
-            #MainMenu {visibility: hidden;}
-            footer {visibility: hidden;}
-            </style>
-            """
-st.markdown(hide_streamlit_style, unsafe_allow_html=True) 
+# --- 高级 UI 设计与 CSS 注入 (仿 Bienville Capital 极简奢华风格) ---
+st.markdown("""
+<style>
+    @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;1,400&family=Inter:wght@300;400;600&display=swap');
+
+    /* 全局背景与字体 */
+    .stApp {
+        background-color: #0e0e0e; /* 更深邃的黑色 */
+        color: #e0e0e0;
+        font-family: 'Inter', sans-serif;
+    }
+
+    /* 隐藏 Streamlit 默认元素，但保留 Header 用于显示侧边栏按钮 */
+    #MainMenu {visibility: hidden;}
+    footer {visibility: hidden;}
+    
+    /* 隐藏顶部红线 */
+    header[data-testid="stHeader"] {
+        background: transparent !important;
+    }
+    
+    /* 调整侧边栏收缩后的按钮位置，确保它贴合左上角 */
+    [data-testid="stSidebarCollapsedControl"] {
+        position: fixed;
+        top: 15px;
+        left: 15px;
+        width: 40px;
+        height: 40px;
+    }
+    
+    /* 侧边栏开关按钮默认隐藏，通过动画延迟显示 */
+    [data-testid="stSidebarCollapsedControl"] {
+        color: #ffffff !important;
+        background-color: rgba(255, 255, 255, 0.05) !important;
+        border-radius: 4px;
+        transition: all 0.3s;
+        z-index: 1000001 !important;
+        opacity: 0;
+        animation: fadeInButton 1s ease-in-out forwards;
+        animation-delay: 7s; /* 延迟直到开场动画结束 */
+    }
+    
+    @keyframes fadeInButton {
+        to { opacity: 1; }
+    }
+    
+    [data-testid="stSidebarCollapsedControl"]:hover {
+        background-color: rgba(255, 255, 255, 0.2) !important;
+        color: #ffffff !important;
+    }
+
+    /* 标题排版 */
+    h1, h2, h3 {
+        font-family: 'Playfair Display', serif;
+        font-weight: 700;
+        letter-spacing: -0.02em;
+    }
+    
+    h1 {
+        font-size: 3.5rem !important;
+        color: #ffffff;
+        margin-bottom: 0.5rem !important;
+    }
+
+    /* 侧边栏美化 - 恢复默认宽度，保持质感 */
+    [data-testid="stSidebar"] {
+        background-color: #111111;
+        border-right: 1px solid #333;
+        /* 移除强制宽度设置，恢复 Streamlit 默认行为 */
+    }
+    
+    /* 核心修复：确保侧边栏收起时完全隐藏，不留残影 */
+    [data-testid="stSidebar"][aria-expanded="false"] {
+        margin-left: -320px; /* 默认宽度通常约为 320px */
+        min-width: 0 !important;
+        width: 0 !important;
+        flex-basis: 0 !important;
+    }
+    
+    /* 侧边栏内的组件间距优化 */
+    [data-testid="stSidebar"] .block-container {
+        padding-top: 3rem;
+        padding-left: 2rem;
+        padding-right: 2rem;
+    }
+    
+    /* 侧边栏标题 */
+    [data-testid="stSidebar"] h1 {
+        font-family: 'Playfair Display', serif;
+        font-size: 2.2rem !important;
+        letter-spacing: 1px;
+        margin-bottom: 2rem;
+        color: #fff;
+    }
+    
+    /* 侧边栏输入框与按钮 */
+    [data-testid="stSidebar"] input {
+        background-color: #1f1f1f !important;
+        border: 1px solid #444 !important;
+        padding: 10px !important;
+    }
+    
+    /* File Uploader 美化 */
+    [data-testid="stFileUploader"] {
+        border: 1px dashed #555;
+        border-radius: 4px;
+        padding: 20px;
+        background-color: #161616;
+        transition: border-color 0.3s;
+    }
+    [data-testid="stFileUploader"]:hover {
+        border-color: #fff;
+    }
+    
+    /* Expander 美化 */
+    .streamlit-expanderHeader {
+        background-color: #161616 !important;
+        color: #ccc !important;
+        border: 1px solid #333;
+    }
+    
+    /* 自定义按钮风格 - 侧边栏触发器 */
+    .sidebar-trigger {
+        position: fixed;
+        top: 20px;
+        left: 20px;
+        z-index: 9999;
+        cursor: pointer;
+        color: #fff;
+        font-family: 'Inter', sans-serif;
+        font-size: 0.9rem;
+        letter-spacing: 2px;
+        text-transform: uppercase;
+        mix-blend-mode: difference;
+    }
+    
+    /* 重点内容放大处理 */
+    .highlight-text {
+        font-family: 'Playfair Display', serif;
+        font-size: 1.5rem;
+        color: #ffffff;
+        line-height: 1.6;
+        margin: 2rem 0;
+        border-left: 3px solid #fff;
+        padding-left: 20px;
+    }
+    
+    /* 中文适配优化 */
+    .cn-text {
+        font-family: "PingFang SC", "Microsoft YaHei", sans-serif;
+    }
+
+    /* 按钮美化 - 极简黑白 */
+    .stButton > button {
+        background-color: #ffffff !important;
+        color: #000000 !important;
+        border: none !important;
+        border-radius: 0px !important; /* 锐利直角 */
+        font-family: 'Inter', sans-serif !important;
+        font-weight: 600 !important;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        padding: 0.6rem 2rem !important;
+        transition: all 0.3s ease;
+    }
+    .stButton > button:hover {
+        background-color: #cccccc !important;
+        transform: translateY(-2px);
+    }
+
+    /* 输入框美化 */
+    .stTextInput > div > div > input {
+        background-color: #1a1a1a;
+        color: #fff;
+        border: 1px solid #333;
+        border-radius: 0px;
+    }
+    .stTextInput > div > div > input:focus {
+        border-color: #fff;
+    }
+
+    /* 优化主内容区域布局 - 修复显示不全和居中问题 */
+    .main .block-container {
+        padding-top: 2rem !important;
+        padding-bottom: 2rem !important;
+        max-width: 1200px !important; /* 限制最大宽度 */
+        margin: 0 auto !important; /* 强制居中 */
+    }
+    
+    /* 修复 Streamlit 可能的内部元素限制 */
+    .stApp > header {
+        background-color: transparent !important;
+    }
+    
+    /* 确保视频全宽 */
+    video {
+        width: 100% !important;
+    }
+
+    /* 自定义 Landing Page 容器 */
+    .landing-container {
+        padding: 4rem 2rem;
+        text-align: left;
+        width: 100%; /* 确保容器占满可用宽度 */
+        max-width: 1000px; /* 限制内容最大宽度 */
+        margin: 0 auto; /* 关键：在全宽父容器中居中 */
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        min-height: 85vh;
+    }
+    
+    .landing-hero-text {
+        font-family: 'Playfair Display', serif;
+        font-size: 5rem; /* 字体加大 */
+        line-height: 1.1;
+        font-weight: 700;
+        color: #ffffff;
+        margin-bottom: 2rem;
+        max-width: 100%; /* 允许文字横向铺满 */
+    }
+    
+    .landing-sub-text {
+        font-family: 'Inter', sans-serif;
+        font-size: 1.4rem;
+        line-height: 1.6;
+        color: #a0a0a0;
+        margin-bottom: 3rem;
+        max-width: 800px; /* 副标题可以稍窄，保持阅读舒适度 */
+        border-left: 2px solid #fff;
+        padding-left: 1.5rem;
+    }
+    
+    .feature-list {
+        display: flex;
+        gap: 4rem; /* 增加间距 */
+        flex-wrap: wrap;
+        margin-top: 3rem;
+        justify-content: flex-start; /* 靠左对齐或均匀分布 */
+    }
+    .feature-item {
+        flex: 1;
+        min-width: 200px;
+    }
+    .feature-title {
+        font-family: 'Inter', sans-serif;
+        font-weight: 600;
+        font-size: 0.9rem;
+        text-transform: uppercase;
+        letter-spacing: 2px;
+        color: #666;
+        margin-bottom: 0.5rem;
+    }
+    .feature-desc {
+        font-size: 1.1rem;
+        color: #ddd;
+    }
+    
+    /* 模拟加载动画容器 - 全屏 Overlay */
+    .loader-overlay {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100vw;
+        height: 100vh;
+        background-color: #000000;
+        z-index: 999999; /* 确保覆盖所有 Streamlit 元素 */
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        flex-direction: column;
+        text-align: center;
+    }
+    .loader-text {
+        font-family: 'Playfair Display', serif;
+        font-size: 2.5rem;
+        color: #fff;
+        animation: fadeIn 1.5s ease-in-out;
+    }
+    @keyframes fadeIn {
+        0% { opacity: 0; transform: translateY(10px); }
+        100% { opacity: 1; transform: translateY(0); }
+    }
+
+</style>
+""", unsafe_allow_html=True)
 
 
-st.title("🏃‍♂️ AI 运动教练 V1")
-st.caption("你的随身运动教练，专业姿态分析与改进建议")
+# --- Intro Animation Logic ---
+if "intro_shown" not in st.session_state:
+    st.session_state.intro_shown = False
+
+def show_intro_animation():
+    placeholder = st.empty()
+    
+    # Sequence 1
+    html_1 = """
+<div class="loader-overlay">
+<div class="loader-text">YOUR BODY DOESN'T NEED MORE EXERCISE.</div>
+</div>
+"""
+    placeholder.markdown(html_1, unsafe_allow_html=True)
+    time.sleep(2.5)
+    
+    # Sequence 2
+    html_2 = """
+<div class="loader-overlay">
+<div class="loader-text" style="color: #a0a0a0;">IT NEEDS <span style="color: #fff; font-style: italic;">SMARTER MOVEMENT.</span></div>
+</div>
+"""
+    placeholder.markdown(html_2, unsafe_allow_html=True)
+    time.sleep(2.5)
+    
+    # Sequence 3
+    html_3 = """
+<div class="loader-overlay">
+<div class="loader-text" style="font-size: 5rem; letter-spacing: 5px;">AI COACH</div>
+</div>
+"""
+    placeholder.markdown(html_3, unsafe_allow_html=True)
+    time.sleep(2.0)
+    
+    placeholder.empty()
+    st.session_state.intro_shown = True
+
+# Run intro only once
+if not st.session_state.intro_shown:
+    show_intro_animation()
+    st.rerun() # Rerun to load the main UI cleanly
+
+# --- Main App Logic Starts Here ---
+# st.title("🏃‍♂️ AI 运动教练 V1") # 移除默认标题，使用自定义Landing Page
+# st.caption("你的随身运动教练，专业姿态分析与改进建议") # 移除默认caption
+
 
 
 # --- Gemini API 配置 (自动从 secrets 读取) ---
@@ -241,11 +563,11 @@ try:
             )
             # 创建文档链
             qa_system_prompt = """
-            你是一位专业的AI运动教练。请严格根据下面提供的"知识库上下文"来回答用户的问题。
-            如果上下文中没有足够的信息来回答问题，请礼貌地告知用户"根据我现有的知识，我还无法回答这个问题"，不要尝试编造答案。
-            你的所有回答都必须使用简体中文。
+            You are a professional AI sports coach. Please answer the user's questions strictly based on the "Knowledge Base Context" provided below.
+            If the context does not contain enough information to answer the question, politely inform the user "Based on my current knowledge, I cannot answer this question yet," and do not attempt to fabricate an answer.
+            All your answers must be in English.
             
-            知识库上下文:
+            Knowledge Base Context:
             {context}
             """
             qa_prompt = ChatPromptTemplate.from_messages(
@@ -262,8 +584,8 @@ try:
             @tool
             def knowledge_base_retriever(input: str, chat_history: List[Any]) -> str:
                 """
-                当用户询问关于运动、健身、营养、恢复等通用性知识时使用此工具。
-                不要用它来回答关于特定视频分析结果的问题。
+                Use this tool when the user asks general questions about sports, fitness, nutrition, recovery, etc.
+                Do not use it to answer questions about specific video analysis results.
                 """
                 response = rag_chain.invoke({"input": input, "chat_history": chat_history})
                 return response['answer']
@@ -292,21 +614,21 @@ except Exception as e:
 
 # --- 侧边栏 UI ---
 with st.sidebar:
-    st.header("⚙️ 控制面板") 
+    st.header("控制面板") 
     
     # --- 用户系统 ---
-    username = st.text_input("👤 **你的名字**", placeholder="请输入你的名字用于存档")
+    username = st.text_input("用户名称", placeholder="输入您的名字用于存档")
     
-    with st.expander("🎯 设定本次训练目标 (可选)"):
-        user_goal = st.text_input("我的训练目标:", placeholder="例如：改善深蹲时膝盖内扣")
+    with st.expander("训练目标 (可选)"):
+        user_goal = st.text_input("我的目标:", placeholder="例如：改善深蹲时的膝盖内扣")
 
     st.divider()
 
     st.subheader("上传与分析")
     # --- 优化点：增加用户引导 ---
     uploaded_file = st.file_uploader(
-        "上传你的运动视频",
-        help="建议上传5-15秒的短视频，以获得最佳分析速度和效果。"
+        "上传视频",
+        help="建议：上传 5-15 秒的短视频以获得最佳效果。"
     )
 
     # --- 核心修复：手动进行文件类型验证以绕过Streamlit的bug ---
@@ -319,12 +641,12 @@ with st.sidebar:
         if any(file_name.lower().endswith(ext) for ext in allowed_extensions):
             is_valid_file = True
         else:
-            st.error(f"文件格式无效。请上传以下格式的视频文件: {', '.join(allowed_extensions)}")
+            st.error(f"格式无效。支持的格式: {', '.join(allowed_extensions)}")
     
     desired_frames = st.number_input(
-        "自定义分析帧数",
+        "分析帧数",
         min_value=2, max_value=30, value=6, step=1,
-        help="输入您希望从视频中抽取的关键画面数量。数量越多，分析越精細，但处理时间会更长。建议范围在 5-20 之间。"
+        help="提取的关键帧数量。建议 5-20 帧。"
     )
     
     analyze_button = st.button(
@@ -333,32 +655,70 @@ with st.sidebar:
         disabled=not (uploaded_file and username and is_valid_file)
     )
     if not username:
-        st.warning("请输入你的名字以启用分析按钮。")
+        st.warning("请输入您的名字以启用分析。")
 
+
+# --- 辅助函数：加载视频 ---
+@st.cache_resource
+def get_video_base64(video_path):
+    try:
+        with open(video_path, "rb") as f:
+            data = f.read()
+        return base64.b64encode(data).decode()
+    except FileNotFoundError:
+        return None
 
 # --- 主聊天界面 ---
 
+
 # --- 优化点：增加欢迎页/引导区，避免冷启动 ---
 if not st.session_state.history:
-    st.markdown("""
-        <div style="
-            border: 2px solid #262730;
-            border-radius: 10px;
-            padding: 2rem 1rem;
-            text-align: center;
-            background-color: #1a1c24;">
-            <h2 style="font-weight: bold; color: #FAFAFA;">欢迎使用 AI 运动教练 V1</h2>
-            <p style="color: #c9c9c9;">你的随身运动教练，我可以分析您上传的运动视频，提供专业的姿态评估和改进建议。</p>
-            <p><strong>请按以下步骤开始：</strong></p>
-            <ol style="display: inline-block; text-align: left; margin-top: 1rem; color: #c9c9c9;">
-                <li>在左侧的 <strong>控制面板</strong> 输入您的名字。</li>
-                <li>上传您的运动视频。</li>
-                <li>（可选）调整您希望分析的 <strong>关键帧数量</strong>。</li>
-                <li>点击 <strong>"开始分析"</strong> 按钮，稍等片刻即可获得报告。</li>
-            </ol>
-            <p style="margin-top: 1.5rem; color: #a0a0a0;">期待看到您的精彩表现！</p>
-        </div>
-    """, unsafe_allow_html=True)
+    # 加载宣传视频
+    video_path = "/Users/boannn/codes/coach/宣传片.mp4"
+    video_b64 = get_video_base64(video_path)
+    video_html = ""
+    if video_b64:
+        video_html = f"""
+<div style="margin: 3rem 0; border-radius: 0px; overflow: hidden; border: 1px solid #333;">
+<video autoplay loop muted playsinline width="100%" style="display: block; opacity: 0.8;">
+<source src="data:video/mp4;base64,{video_b64}" type="video/mp4">
+</video>
+</div>
+"""
+
+    html_content = f"""
+<div class="landing-container">
+<div class="landing-hero-text">
+YOUR BODY DOESN'T NEED MORE EXERCISE.<br>
+IT NEEDS <span style="font-style: italic; color: #888;">SMARTER MOVEMENT.</span>
+</div>
+<div class="highlight-text cn-text">
+我们不仅仅是记录运动，更是在解码人体力学。<br>
+结合计算机视觉与生成式 AI，为您提供可量化的专业洞察。
+</div>
+{video_html}
+<div class="landing-divider"></div>
+<div class="feature-list">
+<div class="feature-item">
+<div class="feature-title">01. CAPTURE (拍摄)</div>
+<div class="feature-desc cn-text">上传您的运动视频，支持任意角度与动作。</div>
+</div>
+<div class="feature-item">
+<div class="feature-title">02. ANALYZE (分析)</div>
+<div class="feature-desc cn-text">精准的骨骼追踪与关节角度量化。</div>
+</div>
+<div class="feature-item">
+<div class="feature-title">03. EVOLVE (进化)</div>
+<div class="feature-desc cn-text">获取 AI 提供的专业改进建议与训练计划。</div>
+</div>
+</div>
+<div style="margin-top: 4rem; color: #666; font-size: 0.8rem; letter-spacing: 1px;" class="cn-text">
+请点击左上角箭头展开侧边栏开始体验 &rarr;
+</div>
+</div>
+"""
+    st.markdown(html_content, unsafe_allow_html=True)
+
 
 # 显示历史对话记录
 for message in st.session_state.history:
@@ -392,8 +752,8 @@ if analyze_button:
         "左髋角度": [],
         "右髋角度": []
     }
-    with st.spinner("处理中，请稍候..."):
-        st.info("AI正在分析...请稍候")
+    with st.spinner("处理中..."):
+        st.info("AI 正在分析...")
         # --- 视频处理逻辑 ---
         with tempfile.NamedTemporaryFile(delete=False, suffix='.mp4') as tfile:
             tfile.write(uploaded_file.read())
@@ -406,7 +766,7 @@ if analyze_button:
             st.stop()
         
         frame_interval = max(total_frames // desired_frames, 1)
-        st.write(f"视频总帧数: {total_frames}，将均匀抽取 {desired_frames} 帧进行分析。")
+        st.write(f"视频总帧数: {total_frames}。正在提取 {desired_frames} 个关键帧。")
         
         sampled_frames_pil = []
         frame_indices_to_extract = [i * frame_interval for i in range(desired_frames)]
@@ -457,10 +817,10 @@ if analyze_button:
                 sampled_frames_pil.append(pil_image)
         
         cap.release()
-        st.write(f"图像提取完成！共提取 {len(sampled_frames_pil)} 帧。正在准备发送...")
+        st.write(f"提取完成。共捕获 {len(sampled_frames_pil)} 帧。")
 
         if not sampled_frames_pil:
-            st.error("无法从视频中提取任何有效帧。")
+            st.error("未提取到有效帧。")
         else:
             st.session_state.analysis_df = pd.DataFrame(quantitative_data)
             df = st.session_state.analysis_df
@@ -469,32 +829,32 @@ if analyze_button:
             cols = st.columns(len(sampled_frames_pil))
             for i, img in enumerate(sampled_frames_pil):
                 with cols[i]:
-                    st.image(img, caption=f"帧 {i+1}", use_container_width=True)
+                    st.image(img, caption=f"第 {i+1} 帧", use_container_width=True)
 
             # --- LangChain Prompt & Invocation ---
             focus_prompt = f"用户的训练目标是{user_goal}。如有相关问题请适当关注。" if user_goal else ""
             data_prompt = f"\n以下为部分帧的量化数据，仅供你分析时参考，重点请结合视频帧的多模态理解进行综合判断：\n{df.to_markdown(index=False)}\n" if not df.empty else ""
             prompt_text = f"""
-            你是一位顶级的运动生物力学专家和AI教练。你的所有回答都必须使用简体中文。
-            你的任务是基于用户上传的视频帧为主，结合部分量化数据（仅作辅助参考），提供一份专业、深入、以多模态理解为核心的分析报告。
+            You are a top-tier sports biomechanics expert and AI coach. All your responses must be in Simplified Chinese.
+            Your task is to provide a professional, in-depth analysis report based primarily on the user-uploaded video frames, with some quantitative data (for reference only) and a focus on multi-modal understanding.
             {focus_prompt}
             {data_prompt}
 
-            **输出格式要求：**
-            请严格按照以下三个部分进行组织：
+            **Output Format Requirements:**
+            Please strictly organize your response into the following three sections:
 
             - **【综合评估与得分】**: 
-              首先，**必须使用Markdown表格**清晰地展示四个维度的得分。表格应包含"评估维度"和"得分 (满分10)"两列。
-              然后，在表格下方给出一个简短的总体评价。
+              First, you **must use a Markdown table** to clearly display scores for four dimensions. The table should include "评估维度" (Assessment Dimension) and "得分 (满分10)" (Score out of 10) columns.
+              Then, provide a brief overall evaluation below the table.
 
             - **【多模态诊断】**: 
-              这是报告的核心。请**以视频帧的多模态理解为主，量化数据仅作辅助**，逐项解释打分依据。
-              例如："在第X帧图像中观察到..."。不要只围绕量化数据展开。
+              This is the core of the report. Please **focus on the multi-modal understanding of video frames, using quantitative data only as auxiliary support**, and explain the basis for your scoring item by item.
+              For example: "在第X帧中观察到...". Do not just discuss quantitative data.
 
             - **【核心改进建议】**: 
-              针对得分较低的维度和用户目标，提供最关键、最可操作的训练建议。
+              Provide the most critical and actionable training suggestions targeting the lower-scoring dimensions and the user's goals.
 
-            你的语气应专业、严谨且富有鼓励性。请开始分析。
+            Your tone should be professional, rigorous, and encouraging. Please begin your analysis.
             """
             
             # 将PIL图像转换为LangChain所需格式
@@ -518,7 +878,7 @@ if analyze_button:
             st.session_state.history = []
 
             try:
-                st.info("AI大模型正在生成分析报告...")
+                st.info("正在生成报告...")
                 with st.chat_message("assistant"):
                     response_container = st.empty()
                     collected_messages = ""
@@ -536,15 +896,15 @@ if analyze_button:
                     if collected_messages and username:
                         try:
                             save_data(username, collected_messages, df)
-                            st.success(f"✅ 分析结果已自动为用户 {username} 存档！")
+                            st.success(f"已为用户 {username} 存档分析结果")
                         except Exception as e:
-                            st.error(f"❌ 自动存档失败: {e}")
+                            st.error(f"存档失败: {e}")
                             print(f"存档错误详情: {e}")
 
                     # --- 分析完成后的图表和下载按钮 ---
                     if not df.empty:
                         st.write("---")
-                        st.subheader("📈 详细数据图表")
+                        st.subheader("详细数据指标")
                         
                         # 膝关节角度变化
                         fig_knee = go.Figure()
@@ -565,7 +925,7 @@ if analyze_button:
                             marker=dict(size=10)
                         ))
                         fig_knee.update_layout(
-                            title='膝关节角度变化', 
+                            title='膝关节角度', 
                             xaxis_title='帧号', 
                             yaxis_title='角度 (°)', 
                             template='plotly_dark',
@@ -592,7 +952,7 @@ if analyze_button:
                             marker=dict(size=10)
                         ))
                         fig_hip.update_layout(
-                            title='髋关节角度变化', 
+                            title='髋关节角度', 
                             xaxis_title='帧号', 
                             yaxis_title='角度 (°)', 
                             template='plotly_dark',
@@ -600,13 +960,13 @@ if analyze_button:
                         )
                         st.plotly_chart(fig_hip, use_container_width=True, key="hip_chart")
                         
-                        with st.expander("📊 查看原始数据表"):
+                        with st.expander("查看原始数据"):
                             st.dataframe(df, use_container_width=True)
                     
                     # 只保留下载功能
                     if collected_messages:
                         st.download_button(
-                            label="📥 下载本次分析报告",
+                            label="下载报告",
                             data=collected_messages,
                             file_name=f"ai_coach_report_{username}_{time.strftime('%Y%m%d_%H%M%S')}.md",
                             mime="text/markdown",
@@ -616,14 +976,14 @@ if analyze_button:
             except Exception as e:
                 error_str = str(e)
                 if "safety" in error_str.lower() or "blocked" in error_str.lower():
-                     st.error("请求被安全策略阻止，可能是图像或文本内容被误判。请尝试更换视频或调整提示。")
+                     st.error("请求被安全设置阻止。请尝试其他视频。")
                 else:
-                     st.error(f"调用AI模型时发生错误: {e}")
+                     st.error(f"AI 错误: {e}")
                 print(e)
 
 # 仅在AI有回复后（即分析完成后）显示输入框
 if st.session_state.history and isinstance(st.session_state.history[-1], AIMessage):
-    if prompt := st.chat_input('可以继续向AI提问，例如"我的左腿应该注意什么？"'):
+    if prompt := st.chat_input('关于分析结果，您想问 AI 什么...'):
         user_prompt_message = HumanMessage(content=prompt)
         st.session_state.history.append(user_prompt_message)
         
