@@ -113,13 +113,16 @@ st.markdown("""
         border-right: 1px solid #333;
         /* 移除强制宽度设置，恢复 Streamlit 默认行为 */
     }
-    
+
     /* 核心修复：确保侧边栏收起时完全隐藏，不留残影 */
     [data-testid="stSidebar"][aria-expanded="false"] {
-        margin-left: -320px; /* 默认宽度通常约为 320px */
-        min-width: 0 !important;
-        width: 0 !important;
-        flex-basis: 0 !important;
+        display: none !important;
+    }
+
+    /* 确保侧边栏收起时，主内容区域占满全宽 */
+    [data-testid="stSidebar"][aria-expanded="false"] ~ .main,
+    section[data-testid="stSidebar"][aria-expanded="false"] ~ .main {
+        margin-left: 0 !important;
     }
     
     /* 侧边栏内的组件间距优化 */
@@ -224,22 +227,40 @@ st.markdown("""
         border-color: #fff;
     }
 
-    /* 优化主内容区域布局 - 修复显示不全和居中问题 */
-    .main .block-container {
-        padding-top: 2rem !important;
-        padding-bottom: 2rem !important;
-        max-width: 1200px !important; /* 限制最大宽度 */
-        margin: 0 auto !important; /* 强制居中 */
+    /* 优化主内容区域布局 - 完美居中且宽屏 */
+    .stApp {
+        display: flex;
+        flex-direction: row;
     }
-    
+
+    .main {
+        flex: 1;
+        margin-left: 0 !important;
+        padding-left: 0 !important;
+        width: 100% !important;
+        display: flex;
+        justify-content: center;
+    }
+
+    .main .block-container {
+        max-width: 90rem !important;
+        padding-left: 2rem !important;
+        padding-right: 2rem !important;
+        padding-top: 2rem !important;
+        margin: 0 auto !important;
+        width: 100% !important;
+    }
+
+    /* 视频容器居中 */
+    video {
+        width: 100% !important;
+        display: block;
+        margin: 0 auto;
+    }
+
     /* 修复 Streamlit 可能的内部元素限制 */
     .stApp > header {
         background-color: transparent !important;
-    }
-    
-    /* 确保视频全宽 */
-    video {
-        width: 100% !important;
     }
 
     /* 自定义 Landing Page 容器 */
