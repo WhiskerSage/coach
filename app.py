@@ -30,6 +30,7 @@ from langchain_core.tools import tool
 from langchain.agents import AgentExecutor, create_tool_calling_agent
 from langchain_core.prompts import MessagesPlaceholder
 from langchain.chains.history_aware_retriever import create_history_aware_retriever
+from typing import List, Any
 
 # --- 页面配置和标题 ---
 st.set_page_config(
@@ -220,7 +221,7 @@ try:
             
             # 定义工具
             @tool
-            def knowledge_base_retriever(input: str, chat_history: list) -> str:
+            def knowledge_base_retriever(input: str, chat_history: List[Any]) -> str:
                 """
                 当用户询问关于运动、健身、营养、恢复等通用性知识时使用此工具。
                 不要用它来回答关于特定视频分析结果的问题。
@@ -231,8 +232,9 @@ try:
         
         # --- 创建Agent ---
         tools = [get_angle_extremes, get_max_angle_difference]
-        if retriever_tool:
-            tools.append(retriever_tool)
+        # 暂时注释掉RAG工具以避免参数问题
+        # if retriever_tool:
+        #     tools.append(retriever_tool)
 
         agent_prompt = ChatPromptTemplate.from_messages([
             ("system", "你是一位专业的AI运动教练。你可以调用工具来查询知识库或分析数据。你的所有回答都必须使用简体中文。"),
@@ -283,7 +285,7 @@ with st.sidebar:
     desired_frames = st.number_input(
         "自定义分析帧数",
         min_value=2, max_value=30, value=6, step=1,
-        help="输入您希望从视频中抽取的关键画面数量。数量越多，分析越精細，但处理时间也更长。建议范围在 5-20 之间。"
+        help="输入您希望从视频中抽取的关键画面数量。数量越多，分析越精細，但处理时间会更长。建议范围在 5-20 之间。"
     )
     
     analyze_button = st.button(
