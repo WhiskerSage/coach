@@ -1,6 +1,6 @@
 streamlit
 opencv-python
-mediapipe
+mediapipe==0.10.9
 Pillow
 numpy
 pandas
@@ -9,4 +9,6 @@ langchain
 langchain-google-genai
 langchain-community
 faiss-cpu
-tiktoken 
+tiktoken
+importlib-metadata>=4.8.0
+tabulate 

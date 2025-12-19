@@ -1,7 +1,9 @@
-# 先切换端口
-# set HTTPS_PROXY=http://127.0.0.1:7897 一定要在cmd里切换到你vpn的端口，不然连不上。一定要在cmd里！！！加拿大、美国节点最好
+# AI 运动教练 - V1
+# 你的随身运动教练
+#
+# 启动方式：
+# 先切换端口（如需代理）：set HTTPS_PROXY=http://127.0.0.1:7897
 # streamlit run app.py 来启动
-# --- 最终优化与修正版本 v4 ---
 
 import streamlit as st
 import cv2
@@ -19,7 +21,9 @@ import json
 from datetime import datetime
 from langchain_google_genai import ChatGoogleGenerativeAI, HarmCategory, HarmBlockThreshold
 from langchain_core.messages import HumanMessage, AIMessage
-from langchain_community.document_loaders import DirectoryLoader
+from langchain_community.document_loaders import TextLoader
+import os
+import glob
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from langchain_community.vectorstores import FAISS
@@ -34,7 +38,7 @@ from typing import List, Any
 
 # --- 页面配置和标题 ---
 st.set_page_config(
-    page_title="AI运动教练",
+    page_title="AI运动教练 V1",
     page_icon="🏃‍♂️",
     layout="wide"
 )
@@ -49,8 +53,8 @@ hide_streamlit_style = """
 st.markdown(hide_streamlit_style, unsafe_allow_html=True) 
 
 
-st.title("🏃‍♂️ AI 运动教练")
-st.caption("结合无人机视觉，您的专属运动表现分析助手")
+st.title("🏃‍♂️ AI 运动教练 V1")
+st.caption("你的随身运动教练，专业姿态分析与改进建议")
 
 
 # --- Gemini API 配置 (自动从 secrets 读取) ---
@@ -149,26 +153,57 @@ def get_max_angle_difference(joint: str) -> dict:
 # --- RAG Setup: 创建并缓存Retriever ---
 @st.cache_resource
 def get_retriever(api_key):
+    """
+    创建知识库检索器（可选功能）
+    如果创建失败，不影响主要的视频分析功能
+    """
     try:
-        loader = DirectoryLoader('./knowledge_base/', glob="**/*.md", show_progress=True)
-        documents = loader.load()
-        if not documents:
-            st.warning("知识库为空，RAG功能将不会生效。请在 knowledge_base 文件夹中添加Markdown文件。")
+        # 手动加载 knowledge_base 目录下的所有 .md 文件
+        kb_path = './knowledge_base/'
+        md_files = glob.glob(os.path.join(kb_path, '**/*.md'), recursive=True)
+
+        if not md_files:
+            print("知识库为空，RAG功能将不会生效。")
             return None
+
+        documents = []
+        for file_path in md_files:
+            try:
+                # 使用 TextLoader 加载每个文件，指定编码为 utf-8
+                loader = TextLoader(file_path, encoding='utf-8')
+                documents.extend(loader.load())
+            except Exception as e:
+                print(f"加载文件 {file_path} 时出错: {e}")
+                continue
+
+        if not documents:
+            print("无法加载知识库文件，RAG功能将不会生效。")
+            return None
+
         text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=100)
         texts = text_splitter.split_documents(documents)
-        embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001", google_api_key=api_key)
+
+        print(f"正在创建知识库向量索引（这可能需要一些时间）...")
+        embeddings = GoogleGenerativeAIEmbeddings(model="models/text-embedding-004", google_api_key=api_key)
+        # 使用FAISS创建向量存储
         vectorstore = FAISS.from_documents(texts, embeddings)
+        print(f"✓ 成功加载 {len(md_files)} 个知识库文件，共 {len(texts)} 个文本块")
         return vectorstore.as_retriever()
     except Exception as e:
-        st.error(f"创建RAG索引时出错: {e}")
+        # 配额超限或其他错误时，只打印警告，不中断应用
+        error_msg = str(e)
+        if "quota" in error_msg.lower() or "429" in error_msg:
+            print(f"⚠ RAG功能暂时不可用: API配额已达上限")
+            print(f"  提示: RAG功能需要 embedding API 配额，主要的视频分析功能不受影响")
+        else:
+            print(f"⚠ RAG功能初始化失败: {error_msg}")
         return None
 
 # --- LangChain 初始化 ---
 try:
     if "llm" not in st.session_state:
         st.session_state.llm = ChatGoogleGenerativeAI(
-            model="gemini-1.5-flash",
+            model="gemini-2.5-flash-lite", 
             google_api_key=api_key,
             safety_settings=safety_settings,
         )
@@ -177,7 +212,11 @@ try:
     if "analysis_df" not in st.session_state:
         st.session_state.analysis_df = pd.DataFrame() # 用于存储分析数据
     if "retriever" not in st.session_state:
-        st.session_state.retriever = get_retriever(api_key) # 初始化RAG
+        # 初始化RAG（可选功能，失败不影响主要功能）
+        with st.spinner("正在初始化知识库..."):
+            st.session_state.retriever = get_retriever(api_key)
+            if st.session_state.retriever is None:
+                st.info("💡 提示：知识库功能当前不可用（可能是API配额限制），但不影响视频分析功能。")
     if "agent_executor" not in st.session_state:
         # --- 将RAG包装成一个工具 ---
         retriever_tool = None
@@ -303,13 +342,13 @@ with st.sidebar:
 if not st.session_state.history:
     st.markdown("""
         <div style="
-            border: 2px solid #262730; 
-            border-radius: 10px; 
-            padding: 2rem 1rem; 
-            text-align: center; 
+            border: 2px solid #262730;
+            border-radius: 10px;
+            padding: 2rem 1rem;
+            text-align: center;
             background-color: #1a1c24;">
-            <h2 style="font-weight: bold; color: #FAFAFA;">欢迎使用 AI 运动教练</h2>
-            <p style="color: #c9c9c9;">我是您的专属AI教练，可以分析您上传的运动视频，提供专业的姿态评估和改进建议。</p>
+            <h2 style="font-weight: bold; color: #FAFAFA;">欢迎使用 AI 运动教练 V1</h2>
+            <p style="color: #c9c9c9;">你的随身运动教练，我可以分析您上传的运动视频，提供专业的姿态评估和改进建议。</p>
             <p><strong>请按以下步骤开始：</strong></p>
             <ol style="display: inline-block; text-align: left; margin-top: 1rem; color: #c9c9c9;">
                 <li>在左侧的 <strong>控制面板</strong> 输入您的名字。</li>

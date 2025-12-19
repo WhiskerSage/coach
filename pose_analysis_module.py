@@ -240,7 +240,7 @@ def analyze_video(
         # 7. 调用AI模型
         print("正在调用AI模型生成分析报告...")
         llm = ChatGoogleGenerativeAI(
-            model="gemini-1.5-flash",
+            model="gemini-1.5-flash-latest",  # 使用 -latest 后缀
             google_api_key=api_key,
             safety_settings=safety_settings,
         )

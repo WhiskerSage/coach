@@ -1,3 +1,5 @@
+# AI 运动教练 - 运动表现仪表盘页面 - V1
+
 import streamlit as st
 import pandas as pd
 import json
@@ -5,13 +7,13 @@ import plotly.graph_objs as go
 
 # --- 页面配置 ---
 st.set_page_config(
-    page_title="运动表现仪表盘",
+    page_title="运动表现仪表盘 - V1",
     page_icon="📈",
     layout="wide"
 )
 
 st.title("📈 运动表现仪表盘")
-st.caption("在这里追踪您的每一次进步，见证自己的成长。")
+st.caption("追踪每一次进步，见证您的成长")
 
 # --- 数据文件路径 ---
 DB_FILE = "database.json"
